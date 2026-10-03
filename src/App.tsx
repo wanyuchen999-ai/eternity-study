@@ -45,36 +45,35 @@ export default function App() {
   const [drawer, setDrawer] = useState(false)
   const aiOk = !!useSettings((s) => s.ai.apiKey)
   const theme = useSettings((s) => s.theme)
-  const [authState, setAuthState] = useState<'checking' | 'in' | 'out'>(() =>
-    cloudEnabled() ? 'checking' : getCurrentUser() ? 'in' : 'out'
-  )
+  const [authState, setAuthState] = useState<'checking' | 'in' | 'out'>(() => {
+    if (isCloudProfile()) return 'checking' // 云端模式需校验会话
+    if (getCurrentUser()) return 'in' // 本地档案：直接进入，不受云端影响
+    return cloudEnabled() ? 'checking' : 'out'
+  })
   const [cloudUser, setCloudUser] = useState<{ id: string; email: string } | null>(null)
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme || 'indigo')
   }, [theme])
 
-  // 云端模式：恢复会话 → 拉取数据 → 开启自动同步
+  // 云端判定：只在「未选择档案」或「显式处于云端模式」时执行
   useEffect(() => {
     if (!cloudEnabled()) return
+    if (getCurrentUser() && !isCloudProfile()) return // 本地档案：直接进入
     let alive = true
     ;(async () => {
       try {
         const cu = await getCloudUser()
         if (!alive) return
-        if (!cu) {
-          setAuthState('out') // 没有云端会话 → 显示选择页
+        if (!cu || !isCloudProfile()) {
+          // 无云端会话，或会话存在但用户未选择云端模式 → 显示选择页
+          setAuthState('out')
           return
         }
         setCloudUser(cu)
-        // 本地模式下云端会话保持「休眠」，绝不劫持用户的选择
-        if (!isCloudProfile()) {
-          setAuthState('in')
-          return
-        }
         try {
           await pullCloud(cu.id)
-        } catch (e) {
+        } catch {
           toast('云同步暂时不可用（网络问题），已加载本机缓存数据', 'err')
         }
         setAuthState('in')
@@ -84,7 +83,7 @@ export default function App() {
           toast('云端连接失败，已加载本机缓存数据', 'err')
           setAuthState('in')
         } else {
-          setAuthState('in')
+          setAuthState('out')
         }
       }
     })()
