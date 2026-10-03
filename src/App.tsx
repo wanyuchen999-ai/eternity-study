@@ -3,7 +3,7 @@ import { Icon } from './components/Icon'
 import { Toasts } from './components/ui'
 import { useSettings } from './store/settings'
 import { PomoEngineProvider } from './store/pomoEngine'
-import { getCurrentUser, exitProfile, isCloudProfile, enterCloudProfile } from './lib/profileStorage'
+import { getCurrentUser, exitProfile, isCloudProfile } from './lib/profileStorage'
 import { cloudEnabled } from './lib/cloudConfig'
 import { getCloudUser, pullCloud, startAutoSync } from './lib/cloud'
 import { toast } from './store/ui'
@@ -59,23 +59,34 @@ export default function App() {
     if (!cloudEnabled()) return
     let alive = true
     ;(async () => {
-      const cu = await getCloudUser()
-      if (!alive) return
-      if (!cu) {
-        setAuthState('out')
-        return
-      }
-      setCloudUser(cu)
-      if (!isCloudProfile()) {
-        enterCloudProfile() // 切到云端命名空间并刷新
-        return
-      }
       try {
-        await pullCloud(cu.id)
+        const cu = await getCloudUser()
+        if (!alive) return
+        if (!cu) {
+          setAuthState('out') // 没有云端会话 → 显示选择页
+          return
+        }
+        setCloudUser(cu)
+        // 本地模式下云端会话保持「休眠」，绝不劫持用户的选择
+        if (!isCloudProfile()) {
+          setAuthState('in')
+          return
+        }
+        try {
+          await pullCloud(cu.id)
+        } catch (e) {
+          toast('云同步暂时不可用（网络问题），已加载本机缓存数据', 'err')
+        }
+        setAuthState('in')
       } catch (e) {
-        toast(e instanceof Error ? e.message : String(e), 'err')
+        if (!alive) return
+        if (isCloudProfile()) {
+          toast('云端连接失败，已加载本机缓存数据', 'err')
+          setAuthState('in')
+        } else {
+          setAuthState('in')
+        }
       }
-      setAuthState('in')
     })()
     return () => {
       alive = false
