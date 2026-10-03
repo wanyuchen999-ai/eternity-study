@@ -1,0 +1,10 @@
+node_modules
+dist
+*.local
+.DS_Store
+
+# 用户自己的其他子项目，不随学习台发布（如需发布请删除对应行）
+food-map
+carousel
+know3d
+.zcodeignore
