@@ -44,6 +44,31 @@ npm run preview    # 预览构建产物
 - 若浏览器控制台出现 **CORS 报错**，说明该服务商不允许网页直连，请换服务商（智谱 / DeepSeek / OpenAI 均可直连）
 - 不支持语音转写的服务商：录音整理可先用其他工具转写，再粘贴文本
 
+### 云端账号（可选，站长一次性搭建）
+
+想让大家**在网页上直接注册账号、进度云保存、换设备不丢**？只需站长做一次（免费）：
+
+1. 打开 [supabase.com](https://supabase.com) 注册 → **New project**（免费档够全班用）
+2. 左侧 **SQL Editor** 粘贴并运行：
+
+```sql
+create table public.user_data (
+  id uuid primary key references auth.users(id) on delete cascade,
+  payload jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+alter table public.user_data enable row level security;
+create policy "read own data"   on public.user_data for select using (auth.uid() = id);
+create policy "insert own data" on public.user_data for insert with check (auth.uid() = id);
+create policy "update own data" on public.user_data for update using (auth.uid() = id);
+```
+
+3. 左侧 **Project Settings → API**：复制 `Project URL` 和 `anon public key`
+4. 粘贴到 `src/lib/cloudConfig.ts` 顶部两个常量里，重新构建发布
+5. 建议：**Authentication → Providers → Email** 关闭 `Confirm email`（学生注册免邮箱确认，更顺滑）
+
+完成后：访客打开网站 → 「云端账号」→ 邮箱密码注册 → 数据自动云保存（改动约 2 秒自动同步，换设备登录同账号接上进度）。行级安全（RLS）保证每人只能读写自己的数据。**其他人不需要、也不应该创建自己的 Supabase。**
+
 ### 本地演示模式（无需密钥）
 
 没办 API 密钥也想先体验 AI 功能？开一个终端运行：

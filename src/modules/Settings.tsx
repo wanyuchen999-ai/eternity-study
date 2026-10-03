@@ -1,10 +1,12 @@
-import { useState, type CSSProperties } from 'react'
+import { useState, useEffect, type CSSProperties } from 'react'
 import { Card, Button, Field, Tag } from '../components/ui'
 import { useSettings, type AISettings } from '../store/settings'
 import { chat } from '../lib/ai'
 import { toast } from '../store/ui'
 import { download } from '../lib/util'
-import { exportMyData, importMyData, clearMyData, getCurrentUser } from '../lib/profileStorage'
+import { exportMyData, importMyData, clearMyData, getCurrentUser, exitProfile } from '../lib/profileStorage'
+import { cloudEnabled } from '../lib/cloudConfig'
+import { getCloudUser, pushCloud, cloudSignOut, lastSyncedAt } from '../lib/cloud'
 
 const THEMES: { id: string; name: string; a: string; b: string }[] = [
   { id: 'indigo', name: '默认靛蓝', a: '#6366f1', b: '#8b5cf6' },
@@ -30,6 +32,38 @@ export default function SettingsPage() {
   const s = useSettings()
   const [showKey, setShowKey] = useState(false)
   const [testing, setTesting] = useState(false)
+  const [cloudAcc, setCloudAcc] = useState<{ id: string; email: string } | null>(null)
+  const [syncAt, setSyncAt] = useState(() => lastSyncedAt())
+  const [syncing, setSyncing] = useState(false)
+
+  useEffect(() => {
+    if (!cloudEnabled()) return
+    getCloudUser().then(setCloudAcc)
+  }, [])
+
+  const doSync = async () => {
+    if (!cloudAcc) return
+    setSyncing(true)
+    try {
+      await pushCloud(cloudAcc.id)
+      setSyncAt(lastSyncedAt())
+      toast('已同步到云端 ☁️', 'ok')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), 'err')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  const doLogout = async () => {
+    if (!confirm('退出云端账号？本机缓存的数据会保留，下次登录同账号可继续。')) return
+    try {
+      await cloudSignOut()
+    } catch {
+      /* 忽略 */
+    }
+    exitProfile()
+  }
 
   const test = async () => {
     setTesting(true)
@@ -119,6 +153,23 @@ export default function SettingsPage() {
           智谱注册即送额度且 glm-4-flash / glm-4v-flash 免费，适合学生；任何 OpenAI 兼容服务都可用。若浏览器控制台出现 CORS 报错，说明该服务商不允许网页直连，请更换服务商。
         </div>
       </Card>
+
+      {cloudEnabled() && (
+        <Card className="mt16" title="云同步账号" extra={<Tag color={cloudAcc ? 'green' : 'gray'}>{cloudAcc ? '已登录' : '未登录'}</Tag>}>
+          {cloudAcc ? (
+            <>
+              <div className="field-hint">当前账号：{cloudAcc.email}{syncAt ? ` · 上次同步：${new Date(syncAt).toLocaleString()}` : ''}</div>
+              <div className="row mt12" style={{ gap: 10, flexWrap: 'wrap' }}>
+                <Button icon="download" onClick={doSync} disabled={syncing}>{syncing ? '同步中…' : '立即同步'}</Button>
+                <Button variant="ghost" onClick={doLogout}>退出登录</Button>
+                <span className="field-hint">改动后约 2 秒自动同步；换设备登录同账号即可接上进度</span>
+              </div>
+            </>
+          ) : (
+            <div className="field-hint">刷新页面在首页登录/注册云端账号后，进度将自动云保存。</div>
+          )}
+        </Card>
+      )}
 
       <Card className="mt16" title="通用偏好">
         <div className="grid2">

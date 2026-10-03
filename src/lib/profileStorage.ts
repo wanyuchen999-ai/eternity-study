@@ -38,7 +38,18 @@ export const getPrefix = () => prefix
 export function getCurrentUser(): ProfileUser | null {
   const m = readMeta()
   if (!m?.current) return null
+  if (m.current === '@cloud') return { name: '云端账号', emoji: '☁️' }
   return m.users.find((u) => u.name === m.current) ?? { name: m.current, emoji: '🌟' }
+}
+
+export const isCloudProfile = () => readMeta()?.current === '@cloud'
+
+/** 登录云端账号后切换到云端缓存命名空间 */
+export function enterCloudProfile() {
+  const m = readMeta() ?? { current: '', users: [] as ProfileUser[] }
+  m.current = '@cloud'
+  writeMeta(m)
+  location.reload()
 }
 
 export function listUsers(): ProfileUser[] {

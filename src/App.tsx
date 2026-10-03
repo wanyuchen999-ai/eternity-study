@@ -3,7 +3,10 @@ import { Icon } from './components/Icon'
 import { Toasts } from './components/ui'
 import { useSettings } from './store/settings'
 import { PomoEngineProvider } from './store/pomoEngine'
-import { getCurrentUser, exitProfile } from './lib/profileStorage'
+import { getCurrentUser, exitProfile, isCloudProfile, enterCloudProfile } from './lib/profileStorage'
+import { cloudEnabled } from './lib/cloudConfig'
+import { getCloudUser, pullCloud, startAutoSync } from './lib/cloud'
+import { toast } from './store/ui'
 import Home from './modules/Home'
 import Pomodoro from './modules/Pomodoro'
 import Todos from './modules/Todos'
@@ -42,12 +45,64 @@ export default function App() {
   const [drawer, setDrawer] = useState(false)
   const aiOk = !!useSettings((s) => s.ai.apiKey)
   const theme = useSettings((s) => s.theme)
+  const [authState, setAuthState] = useState<'checking' | 'in' | 'out'>(() =>
+    cloudEnabled() ? 'checking' : getCurrentUser() ? 'in' : 'out'
+  )
+  const [cloudUser, setCloudUser] = useState<{ id: string; email: string } | null>(null)
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme || 'indigo')
   }, [theme])
 
-  if (!user) {
+  // 云端模式：恢复会话 → 拉取数据 → 开启自动同步
+  useEffect(() => {
+    if (!cloudEnabled()) return
+    let alive = true
+    ;(async () => {
+      const cu = await getCloudUser()
+      if (!alive) return
+      if (!cu) {
+        setAuthState('out')
+        return
+      }
+      setCloudUser(cu)
+      if (!isCloudProfile()) {
+        enterCloudProfile() // 切到云端命名空间并刷新
+        return
+      }
+      try {
+        await pullCloud(cu.id)
+      } catch (e) {
+        toast(e instanceof Error ? e.message : String(e), 'err')
+      }
+      setAuthState('in')
+    })()
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!cloudUser) return
+    const uid = cloudUser.id
+    return startAutoSync(() => uid)
+  }, [cloudUser])
+
+  if (authState === 'checking') {
+    return (
+      <div className="gate-wrap">
+        <div className="gate-card">
+          <div className="gate-logo">
+            <span className="logo-mark">E</span>
+            <span>Eternity 学习台</span>
+          </div>
+          <div className="gate-sub">正在恢复你的账号与学习进度…</div>
+        </div>
+      </div>
+    )
+  }
+
+  if (authState === 'out' || (!user && !cloudUser)) {
     return (
       <PomoEngineProvider>
         <ProfileGate />
@@ -88,11 +143,19 @@ export default function App() {
             ))}
           </nav>
           <div className="sidebar-foot">
-            <button className="user-chip" onClick={() => exitProfile()} title="切换 / 新建用户">
-              <span className="user-emoji">{user.emoji}</span>
-              <span className="user-name">{user.name}</span>
-              <span className="user-switch">切换</span>
-            </button>
+            {cloudUser ? (
+              <button className="user-chip" onClick={() => nav('settings')} title="云同步设置 / 退出登录">
+                <span className="user-emoji">☁️</span>
+                <span className="user-name">{cloudUser.email}</span>
+                <span className="user-switch">账号</span>
+              </button>
+            ) : (
+              <button className="user-chip" onClick={() => exitProfile()} title="切换 / 新建用户">
+                <span className="user-emoji">{user?.emoji ?? '🌟'}</span>
+                <span className="user-name">{user?.name ?? '本地用户'}</span>
+                <span className="user-switch">切换</span>
+              </button>
+            )}
             <button className={`nav-item ${route === 'settings' ? 'active' : ''}`} onClick={() => nav('settings')}>
               <Icon name="settings" />
               <span>设置</span>
